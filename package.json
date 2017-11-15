@@ -1,0 +1,16 @@
+{
+  "name": "learntocrypto",
+  "version": "1.0.0",
+  "description": "",
+  "main": "bank.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Vadym Yatsyuk <vadym.yatsyuk@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^2.3.0",
+    "duplex-json-stream": "^1.0.1",
+    "sodium-native": "^2.0.0"
+  }
+}
