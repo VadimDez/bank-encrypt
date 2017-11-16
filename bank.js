@@ -6,13 +6,18 @@ const jsonStream = require('duplex-json-stream');
 const net = require('net');
 const chalk = require('chalk');
 const fs = require('fs');
+const sodium = require('sodium-native');
 
 const PORT = 8080;
 const TRANSACTION_FILE = './transactions.json';
 const DEPOSIT_TYPE = 'deposit';
 const WITHDRAW_TYPE = 'withdraw';
 
+const genesisHash = Buffer.alloc(32).toString('hex');
+
 let transactions = restoreTransactionsFromDisk();
+
+validateIntegrity();
 
 const server = net.createServer((socket) => {
   socket = jsonStream(socket);
@@ -56,8 +61,8 @@ function writeBalance(connection) {
 
 function getBalance() {
   return transactions.reduce((prev, actual) => {
-    const f = actual.type === DEPOSIT_TYPE ? 1 : -1;
-    return prev + (actual.amount * f);
+    const f = actual.value.type === DEPOSIT_TYPE ? 1 : -1;
+    return prev + (actual.value.amount * f);
   }, 0);
 }
 
@@ -66,7 +71,7 @@ function deposit(value) {
     return;
   }
 
-  transactions.push({ type: DEPOSIT_TYPE, amount: value });
+  appendToTransactionLog({ type: DEPOSIT_TYPE, amount: value });
   saveTransactionsToDisk();
 }
 
@@ -81,7 +86,7 @@ function withdraw(value) {
     return;
   }
 
-  transactions.push({ type: WITHDRAW_TYPE, amount: value });
+  appendToTransactionLog({ type: WITHDRAW_TYPE, amount: value });
   saveTransactionsToDisk();
 }
 
@@ -96,4 +101,34 @@ function saveTransactionsToDisk() {
       console.log(chalk.red(err));
     }
   })
+}
+
+function appendToTransactionLog(entry) {
+  const prevHash = transactions.length ? transactions[transactions.length - 1].hash : genesisHash;
+
+  transactions.push({
+    value: entry,
+    hash: hashToHex(prevHash + JSON.stringify(entry))
+  })
+}
+
+function hashToHex(value) {
+  let output = Buffer.alloc(sodium.crypto_generichash_BYTES);
+
+  sodium.crypto_generichash(output, Buffer.from(value));
+
+  return output.toString('hex');
+}
+
+function validateIntegrity() {
+  let prevHash = genesisHash;
+  const totalTransactions = transactions.length;
+
+  for (let i = 0; i < totalTransactions; i++) {
+    prevHash = hashToHex(prevHash + JSON.stringify(transactions[i].value));
+
+    if (prevHash !== transactions[i].hash) {
+      throw new Error('Integrity violated! Transaction:' + JSON.stringify(transactions[i].value));
+    }
+  }
 }
