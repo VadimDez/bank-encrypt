@@ -1,2 +1,4 @@
 node_modules/
 .idea/
+key-pair.json
+transactions.json

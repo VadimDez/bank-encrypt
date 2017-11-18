@@ -8,6 +8,10 @@ const chalk = require('chalk');
 const fs = require('fs');
 const sodium = require('sodium-native');
 
+const KeyPairGenerator = require('./key-pair-generator');
+const PersistenceSync = require('./persistence-sync');
+const PersistenceAsync = require('./persistence-async');
+
 const PORT = 8080;
 const TRANSACTION_FILE = './transactions.json';
 const DEPOSIT_TYPE = 'deposit';
@@ -15,7 +19,10 @@ const WITHDRAW_TYPE = 'withdraw';
 
 const genesisHash = Buffer.alloc(32).toString('hex');
 
+let persistenceAsync = new PersistenceAsync();
 let transactions = restoreTransactionsFromDisk();
+let keyPairGenerator = new KeyPairGenerator(new PersistenceSync());
+let keyPair = keyPairGenerator.getKeyPair();
 
 validateIntegrity();
 
@@ -95,21 +102,26 @@ function restoreTransactionsFromDisk() {
 }
 
 function saveTransactionsToDisk() {
-  const content = JSON.stringify(transactions);
-  fs.writeFile(TRANSACTION_FILE, content, err => {
-    if (err) {
-      console.log(chalk.red(err));
-    }
-  })
+  persistenceAsync.save(TRANSACTION_FILE, transactions);
 }
 
 function appendToTransactionLog(entry) {
   const prevHash = transactions.length ? transactions[transactions.length - 1].hash : genesisHash;
+  const newHash = hashToHex(prevHash + JSON.stringify(entry));
 
   transactions.push({
     value: entry,
-    hash: hashToHex(prevHash + JSON.stringify(entry))
+    hash: newHash,
+    signature: signHash(newHash)
   })
+}
+
+function signHash(hash) {
+  let signature = Buffer.alloc(sodium.crypto_sign_BYTES);
+
+  sodium.crypto_sign_detached(signature, Buffer.from(hash), Buffer.from(keyPair.secretKey, 'hex'));
+
+  return signature.toString('hex');
 }
 
 function hashToHex(value) {
@@ -129,6 +141,14 @@ function validateIntegrity() {
 
     if (prevHash !== transactions[i].hash) {
       throw new Error('Integrity violated! Transaction:' + JSON.stringify(transactions[i].value));
+    }
+
+    const publicKey = Buffer.from(keyPair.publicKey, 'hex');
+    const hash = Buffer.from(transactions[i].hash);
+    const signature = Buffer.from(transactions[i].signature, 'hex');
+
+    if (!sodium.crypto_sign_verify_detached(signature, hash, publicKey)) {
+      throw new Error('Signature is not valid!');
     }
   }
 }
